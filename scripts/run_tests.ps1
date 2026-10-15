@@ -4,8 +4,20 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path ".venv\\Scripts\\python.exe")) {
-    throw "Create the virtual environment first: python -m venv .venv"
+# Prefer the virtual environment currently activated in PowerShell. This allows
+# developers to use a versioned environment name such as .venv313 as well as .venv.
+if ($env:VIRTUAL_ENV) {
+    $python = Join-Path $env:VIRTUAL_ENV "Scripts\\python.exe"
+}
+elseif (Test-Path ".venv\\Scripts\\python.exe") {
+    $python = ".venv\\Scripts\\python.exe"
+}
+else {
+    throw "Activate a virtual environment first, then run this script."
+}
+
+if (-not (Test-Path $python)) {
+    throw "Python was not found in the active virtual environment: $python"
 }
 
 if ($WithPostgres) {
@@ -29,6 +41,6 @@ if ($WithPostgres) {
     $env:RUN_POSTGRES_TESTS = "1"
 }
 
-.venv\Scripts\python -m ruff check .
-.venv\Scripts\python -m ruff format --check .
-.venv\Scripts\python -m pytest -q
+& $python -m ruff check .
+& $python -m ruff format --check .
+& $python -m pytest -q
