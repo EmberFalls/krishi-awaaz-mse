@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    delete,
     select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -233,6 +234,10 @@ class PostgresStore:
                     completed_at=now,
                 )
             )
+            # Conversation and offer rows reference the run through foreign keys.
+            # Flush the parent first because these rows are added without ORM
+            # relationships that would otherwise establish dependency ordering.
+            session.flush()
 
             for sequence, line in enumerate(result.intake_dialogue, 1):
                 session.add(
@@ -358,6 +363,45 @@ class PostgresStore:
                 }
                 for row in rows
             ]
+
+    def delete_voice_call(self, call_id: str) -> bool:
+        """Delete one call, its dialogue/audio, and its call-specific result run."""
+
+        with Session(self.engine) as session, session.begin():
+            row = session.get(VoiceCallRow, call_id)
+            if row is None:
+                return False
+            run_id = row.simulation_run_id
+            session.execute(
+                delete(VoiceCallMessageRow).where(VoiceCallMessageRow.call_id == call_id)
+            )
+            session.execute(delete(VoiceAudioRow).where(VoiceAudioRow.call_id == call_id))
+            session.execute(delete(VoiceCallRow).where(VoiceCallRow.call_id == call_id))
+            if run_id:
+                session.execute(delete(SimulationRunRow).where(SimulationRunRow.id == run_id))
+            return True
+
+    def delete_expired_voice_calls(self, retention_days: int) -> int:
+        """Delete demo call data older than the configured retention window."""
+
+        if retention_days < 1:
+            raise ValueError("retention_days must be positive")
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+        with Session(self.engine) as session, session.begin():
+            expired = session.execute(
+                select(VoiceCallRow.call_id, VoiceCallRow.simulation_run_id).where(
+                    VoiceCallRow.updated_at < cutoff
+                )
+            ).all()
+            for call_id, run_id in expired:
+                session.execute(
+                    delete(VoiceCallMessageRow).where(VoiceCallMessageRow.call_id == call_id)
+                )
+                session.execute(delete(VoiceAudioRow).where(VoiceAudioRow.call_id == call_id))
+                session.execute(delete(VoiceCallRow).where(VoiceCallRow.call_id == call_id))
+                if run_id:
+                    session.execute(delete(SimulationRunRow).where(SimulationRunRow.id == run_id))
+            return len(expired)
 
     @staticmethod
     def _upsert_participants(session: Session, scenario: SimulationScenario) -> None:

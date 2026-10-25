@@ -27,7 +27,18 @@ class SarvamSpeechToText:
         self, audio: AudioInput, *, language_hint: str | None = None
     ) -> TranscriptionResult:
         file = BytesIO(audio.content)
-        file.name = "caller-turn.wav"
+        media_type = audio.content_type.split(";", maxsplit=1)[0].strip().lower()
+        extension = {
+            "audio/mpeg": ".mp3",
+            "audio/mp3": ".mp3",
+            "audio/wav": ".wav",
+            "audio/x-wav": ".wav",
+            "audio/aac": ".aac",
+            "audio/ogg": ".ogg",
+            "audio/flac": ".flac",
+            "audio/mp4": ".m4a",
+        }.get(media_type, ".wav")
+        file.name = f"caller-turn{extension}"
         kwargs: dict[str, object] = {
             "file": file,
             "model": "saaras:v3",
@@ -36,7 +47,8 @@ class SarvamSpeechToText:
         if language_hint:
             kwargs["language_code"] = language_hint
         response = await asyncio.to_thread(self._client.speech_to_text.transcribe, **kwargs)
-        confidence = float(getattr(response, "language_probability", 0.0) or 0.0)
+        raw_confidence = getattr(response, "confidence", None)
+        confidence = float(raw_confidence) if raw_confidence is not None else None
         return TranscriptionResult(
             text=response.transcript,
             language=getattr(response, "language_code", None) or language_hint or "unknown",

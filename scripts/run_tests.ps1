@@ -37,7 +37,7 @@ if ($WithPostgres) {
     if (-not $ready) {
         throw "PostgreSQL did not become ready within 40 seconds."
     }
-    $env:DATABASE_URL = "postgresql+psycopg://krishi:krishi@localhost:5432/krishi_awaaz"
+    $env:DATABASE_URL = "postgresql+psycopg://krishi:krishi@localhost:5433/krishi_awaaz"
     $env:RUN_POSTGRES_TESTS = "1"
 }
 

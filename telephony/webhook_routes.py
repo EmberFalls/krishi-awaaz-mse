@@ -9,7 +9,6 @@ repository before accepting real farmer calls.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Protocol
 from urllib.parse import urlencode
 
 import httpx
@@ -20,65 +19,13 @@ from twilio.twiml.voice_response import VoiceResponse
 from data.scenarios import load_scenarios
 from db.database import PostgresStore
 
+from .audio_store import AudioStore, InMemoryAudioStore, PostgresAudioStore
 from .contracts import AudioInput, CallStatus, SynthesizedSpeech
 from .live import LiveCallCoordinator
 from .sarvam import SarvamSpeechToText, SarvamTextToSpeech
 from .settings import VoiceSettings
 
 RecordingFetcher = Callable[[str, VoiceSettings], Awaitable[AudioInput]]
-
-
-class AudioStore(Protocol):
-    def put(self, clip: SynthesizedSpeech) -> None: ...
-
-    def get(self, clip_id: str) -> SynthesizedSpeech: ...
-
-
-class InMemoryAudioStore:
-    """Temporary audio hosting for local tests and development only."""
-
-    def __init__(self) -> None:
-        self._clips: dict[str, SynthesizedSpeech] = {}
-
-    def put(self, clip: SynthesizedSpeech) -> None:
-        if clip.content is None:
-            raise ValueError("A live voice prompt must contain audio bytes.")
-        self._clips[clip.clip_id] = clip
-
-    def get(self, clip_id: str) -> SynthesizedSpeech:
-        try:
-            return self._clips[clip_id]
-        except KeyError as exc:
-            raise KeyError(f"Unknown generated audio clip: {clip_id}") from exc
-
-
-class PostgresAudioStore:
-    """Database-backed development storage for generated prompts.
-
-    This is durable across a server restart. In a production deployment, replace
-    it with encrypted object storage plus a retention policy before storing real
-    farmer audio at scale.
-    """
-
-    def __init__(self, store: PostgresStore) -> None:
-        self._store = store
-
-    def put(self, clip: SynthesizedSpeech) -> None:
-        self._store.save_voice_audio(None, clip)
-
-    def get(self, clip_id: str) -> SynthesizedSpeech:
-        saved = self._store.get_voice_audio(clip_id)
-        if saved is None:
-            raise KeyError(f"Unknown generated audio clip: {clip_id}")
-        content, content_type = saved
-        return SynthesizedSpeech(
-            clip_id=clip_id,
-            text="stored audio",
-            language="und",
-            audio_reference=f"postgres://voice_audio/{clip_id}",
-            content=content,
-            content_type=content_type,
-        )
 
 
 async def download_twilio_recording(recording_url: str, settings: VoiceSettings) -> AudioInput:
@@ -106,6 +53,9 @@ def create_app(
     recording_fetcher: RecordingFetcher = download_twilio_recording,
 ) -> FastAPI:
     settings = settings or VoiceSettings.from_environment()
+    settings.validate_provider()
+    if settings.provider != "twilio":
+        raise ValueError("Set VOICE_PROVIDER=twilio to start the Twilio server.")
     database_store = PostgresStore(settings.database_url) if settings.database_url else None
     if database_store:
         database_store.create_schema()

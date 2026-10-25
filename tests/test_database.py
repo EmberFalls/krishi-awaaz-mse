@@ -24,6 +24,13 @@ def test_store_rejects_non_postgres_database_urls() -> None:
         PostgresStore("sqlite:///simulation.db")
 
 
+def test_voice_dialogue_and_audio_are_cascaded_when_call_is_deleted() -> None:
+    message_call_fk = next(iter(Base.metadata.tables["voice_call_messages"].c.call_id.foreign_keys))
+    audio_call_fk = next(iter(Base.metadata.tables["voice_audio"].c.call_id.foreign_keys))
+    assert message_call_fk.ondelete == "CASCADE"
+    assert audio_call_fk.ondelete == "CASCADE"
+
+
 def test_postgres_ddl_compiles() -> None:
     statements: list[str] = []
 

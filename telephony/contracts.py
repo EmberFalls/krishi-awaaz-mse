@@ -1,8 +1,7 @@
-"""Provider-neutral contracts for the Krishi Awaaz voice boundary.
+"""Provider-neutral contracts shared by the telephony and Sarvam adapters.
 
-Real phone, speech-to-text, and text-to-speech providers will implement these
-interfaces later. Keeping them here prevents provider SDK details from leaking
-into the negotiation workflow.
+Keeping provider request/response details at the voice boundary prevents them
+from leaking into the negotiation workflow.
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ class CallStatus(str, Enum):
 class TranscriptionResult(BaseModel):
     text: str = Field(min_length=1)
     language: str = Field(min_length=2)
-    confidence: float = Field(ge=0, le=1)
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class AudioInput(BaseModel):

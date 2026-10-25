@@ -41,5 +41,32 @@ def test_sarvam_adapters_use_documented_response_shapes() -> None:
 
     assert transcription.text == "नमस्कार"
     assert transcription.language == "mr-IN"
-    assert transcription.confidence == 0.93
+    # Sarvam language_probability indicates language-ID confidence, not transcript confidence.
+    assert transcription.confidence is None
     assert speech.content == b"wav-audio"
+
+
+def test_sarvam_stt_names_recording_from_mime_type() -> None:
+    class Mp3SpeechClient:
+        def transcribe(self, **kwargs: object) -> SimpleNamespace:
+            file = kwargs["file"]
+            assert file.name == "caller-turn.mp3"
+            assert file.read() == b"mp3-caller-audio"
+            return SimpleNamespace(
+                transcript="माझ्याकडे कांदा आहे",
+                language_code="mr-IN",
+                language_probability=0.9,
+            )
+
+    transcription = asyncio.run(
+        SarvamSpeechToText(
+            "key", client=SimpleNamespace(speech_to_text=Mp3SpeechClient())
+        ).transcribe(
+            AudioInput(
+                audio_reference="kookoo-recording:test",
+                content=b"mp3-caller-audio",
+                content_type="audio/mpeg",
+            )
+        )
+    )
+    assert transcription.text == "माझ्याकडे कांदा आहे"
